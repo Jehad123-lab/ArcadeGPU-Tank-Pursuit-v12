@@ -151,7 +151,8 @@ export class GameScreen extends Screen {
        this.cameraPitch += data.movementY * 0.005;
        
        // Limit pitch to avoid flipping over and going way below ground
-       this.cameraPitch = Math.max(-0.4, Math.min(Math.PI / 3, this.cameraPitch));
+       // Limit pitch to avoid flipping over - ensure we can't look too far up/down
+       this.cameraPitch = Math.max(-0.3, Math.min(0.8, this.cameraPitch));
     }
   };
 
@@ -245,7 +246,7 @@ export class GameScreen extends Screen {
 
     const camTarget = [
         followPos[0] + camOffset[0],
-        followPos[1] + camOffset[1] + targetHeightOffset,
+        Math.max(1.0, followPos[1] + camOffset[1] + targetHeightOffset),
         followPos[2] + camOffset[2]
     ] as vec3;
     
@@ -444,10 +445,10 @@ export class GameScreen extends Screen {
           const hVelSq = curV.GetX()*curV.GetX() + curV.GetZ()*curV.GetZ();
           const lastHVelSq = p.lastVel[0]*p.lastVel[0] + p.lastVel[2]*p.lastVel[2];
           
-          // Only impact if near ground and NOT just spawned
+          // Only impact if near ground and NOT just spawned (0.2s grace)
           const groundThreshold = 0.2;
-          const isNearGround = pPos.GetY() < groundThreshold && p.life < 4.9;
-          const hasImpactedVelocity = p.life < 4.9 && Math.abs(lastHVelSq - hVelSq) > 150;
+          const isNearGround = pPos.GetY() < groundThreshold && p.life < 4.8;
+          const hasImpactedVelocity = p.life < 4.8 && Math.abs(lastHVelSq - hVelSq) > 150;
           
           const impacted = isNearGround || hasImpactedVelocity;
 

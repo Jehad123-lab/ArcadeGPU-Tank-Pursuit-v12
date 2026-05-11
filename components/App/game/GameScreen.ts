@@ -151,7 +151,7 @@ export class GameScreen extends Screen {
        this.cameraPitch += data.movementY * 0.005;
        
        // Limit pitch to avoid flipping over and going way below ground
-       this.cameraPitch = Math.max(-0.1, Math.min(Math.PI / 2 - 0.1, this.cameraPitch));
+       this.cameraPitch = Math.max(-0.4, Math.min(Math.PI / 3, this.cameraPitch));
     }
   };
 
@@ -282,10 +282,10 @@ export class GameScreen extends Screen {
     
     // Spawn point well ahead of the barrel tip to avoid self-collision
     // Barrel center is bPos, length is 2.25, tip is ~1.125 ahead.
-    // 3.5m offset from center ensures ~2.3m clearance from muzzle.
-    let spawnDist = 3.5;
+    // 4.0m offset from center ensures ~2.8m clearance from muzzle.
+    let spawnDist = 4.0;
     let spawnX = bPos[0] + forward[0] * spawnDist;
-    let spawnY = bPos[1] + forward[1] * spawnDist;
+    let spawnY = Math.max(0.6, bPos[1] + forward[1] * spawnDist + 0.1); 
     let spawnZ = bPos[2] + forward[2] * spawnDist;
 
     this.spawnProjectile(type, spawnX, spawnY, spawnZ, bRot, 'player');
@@ -446,8 +446,8 @@ export class GameScreen extends Screen {
           
           // Only impact if near ground and NOT just spawned
           const groundThreshold = 0.2;
-          const isNearGround = pPos.GetY() < groundThreshold;
-          const hasImpactedVelocity = p.life < 4.85 && Math.abs(lastHVelSq - hVelSq) > 150;
+          const isNearGround = pPos.GetY() < groundThreshold && p.life < 4.9;
+          const hasImpactedVelocity = p.life < 4.9 && Math.abs(lastHVelSq - hVelSq) > 150;
           
           const impacted = isNearGround || hasImpactedVelocity;
 

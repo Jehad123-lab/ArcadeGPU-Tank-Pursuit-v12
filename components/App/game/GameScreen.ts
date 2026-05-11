@@ -247,11 +247,16 @@ export class GameScreen extends Screen {
 
     let targetY = followPos[1] + camOffset[1] + targetHeightOffset;
     
-    // Hard floor limit to avoid camera going under the map level
-    const absoluteMinHeight = 0.5;
-    if (targetY < absoluteMinHeight) {
-        targetY = absoluteMinHeight;
+    // Smooth, gentle floor/hill clamping
+    // We want the camera to stay at least 1.5m above the tank's base level (followPos[1])
+    // but we use an ease so it doesn't hard-snap.
+    const minHeight = followPos[1] + 1.5;
+    if (targetY < minHeight) {
+        targetY = minHeight - (minHeight - targetY) * 0.1; 
     }
+    
+    // Hard floor limit to avoid passing under the map
+    if (targetY < 0.5) targetY = 0.5;
 
     const camTarget = [
         followPos[0] + camOffset[0],
@@ -292,41 +297,8 @@ export class GameScreen extends Screen {
     
     // Spawn point slightly ahead of the barrel tip.
     // Barrel center is bPos, length is 2.25, tip is ~1.125 ahead.
-    // We need to be outside the tank body (half-depth 1.8) and projectile half-depth (0.6).
-    // Minimum distance from turret center to be clear is 1.8 + 0.6 = 2.4.
-    let spawnDist = 3.2; 
-    
-    // Safety: Raycast to ensure we don't spawn inside a wall
-    const ray = gfx3JoltManager.createRay(bPos[0], bPos[1], bPos[2], bPos[0] + forward[0] * spawnDist, bPos[1] + forward[1] * spawnDist, bPos[2] + forward[2] * spawnDist);
-    if (ray.fraction < 1.0) {
-        const hitDist = spawnDist * ray.fraction;
-        if (hitDist < 2.6) {
-            // Point blank shot into a wall! Don't spawn a physics projectile inside the tank or wall.
-            // Just spawn an explosion at the hit point to show it impacted immediately.
-            const hitX = bPos[0] + forward[0] * hitDist;
-            const hitY = bPos[1] + forward[1] * hitDist;
-            const hitZ = bPos[2] + forward[2] * hitDist;
-            
-            const exp = this.explosionPool.acquire() as Explosion;
-            if (exp) {
-                const color: [number, number, number] = type === ProjectileType.GRENADE ? [0.8, 0.4, 0.1] : [0.6, 0.6, 0.6];
-                exp.reset(hitX, hitY, hitZ, color, undefined, type === ProjectileType.GRENADE ? 4.0 : 1.0, type === ProjectileType.GRENADE ? 'grenade' : undefined);
-                this.explosions.push(exp);
-            }
-            
-            if (type === ProjectileType.GRENADE) {
-                // Apply reduced self-damage for point-blank wall hits
-                this.applyAOE([hitX, hitY, hitZ], 12, 100);
-            }
-            
-            // Recoil
-            this.tank.recoil = Math.max(this.tank.recoil, 0.5);
-            return; // Abort spawning the projectile
-        }
-        // If there's an object in the way but we have room, pull spawn point back
-        spawnDist = Math.max(2.6, hitDist - 0.2);
-    }
-
+    // 2.5m offset from center is safe since we fixed the math explosion bug.
+    let spawnDist = 2.5;
     let spawnX = bPos[0] + forward[0] * spawnDist;
     let spawnY = bPos[1] + forward[1] * spawnDist; 
     let spawnZ = bPos[2] + forward[2] * spawnDist;
@@ -528,15 +500,7 @@ export class GameScreen extends Screen {
 
   onProjectileHit(p: Projectile, target: any, hitPos: vec3) {
       const isEnemy = target instanceof Enemy;
-      
-      // Safety: Cannot hit owner for the first 0.2s of flight
-      if (p.life > 4.8 && target === (p.ownerId === 'player' ? this.tank : null)) {
-          return;
-      }
-
-      // Balance: Enemies do less damage than the player's heavy shells
-      const baseDmg = p.type === ProjectileType.GRENADE ? 100 : 35;
-      const dmg = (p.ownerId === 'enemy') ? baseDmg * 0.6 : baseDmg;
+      const dmg = p.type === ProjectileType.GRENADE ? 100 : 35;
       
       if (isEnemy) {
           target.hp -= dmg;
@@ -552,7 +516,8 @@ export class GameScreen extends Screen {
           if (target.hp <= 0) {
               const expDeath = this.explosionPool.acquire() as Explosion;
               if (expDeath) {
-                  expDeath.reset(ePos.GetX(), ePos.GetY(), ePos.GetZ(), [0.8, 0.2, 0.1], undefined, 1.2);
+                  expDeath.reset(ePos.GetX(), ePos.GetY(), ePos.GetZ(), [0.8, 0.2, 0.1], undefined, 2.5);
+                  this.explosions.push(expDeath);
               }
               gfx3JoltManager.removeBody(target.physicsBody);
               // Teleport far away to avoid ghost collisions (bug in some physics engines)
@@ -563,11 +528,11 @@ export class GameScreen extends Screen {
           this.tank.hp -= dmg;
           const exp = this.explosionPool.acquire() as Explosion;
           if (exp) {
-              exp.reset(hitPos[0], hitPos[1], hitPos[2], [1, 0.1, 0.1], undefined, 1.2);
+              exp.reset(hitPos[0], hitPos[1], hitPos[2], [1, 0.1, 0.1], undefined, 2.0);
               this.explosions.push(exp);
           }
           // Recoil/Shake for player
-          this.tank.recoil = Math.max(this.tank.recoil, 0.4);
+          this.tank.recoil = Math.max(this.tank.recoil, 0.5);
       }
       
       if (p.type === ProjectileType.GRENADE) {
@@ -612,10 +577,7 @@ export class GameScreen extends Screen {
       const playerPos = this.tank.body.getPosition();
       const distToPlayer = UT.VEC3_DISTANCE(origin, playerPos);
       if (distToPlayer < radius) {
-          // Safety: Massive self-damage protection for grenades hitting wall at point-blank
-          const isOwnAOE = true; // For now apply to all, but could check source
-          const finalDamage = (isOwnAOE && distToPlayer < 4.0) ? damage * 0.25 : damage; 
-          this.tank.hp -= finalDamage;
+          this.tank.hp -= damage;
           this.tank.recoil = Math.max(this.tank.recoil, 1.0);
       }
   }

@@ -44,8 +44,8 @@ export class Enemy {
     } catch (e) {
       console.warn('Enemy: Failed to load JSM models, falling back to boxes.', e);
       
-      const chassisColor: [number, number, number] = [0.8, 0.2, 0.6]; // Magenta to look distinct
-      const turretColor: [number, number, number] = [0.6, 0.1, 0.4];
+      const chassisColor: [number, number, number] = [0.8, 0.2, 0.2]; 
+      const turretColor: [number, number, number] = [0.6, 0.1, 0.1];
       Enemy.bodyMesh = createBoxMesh(1.5, 0.6, 2.2, chassisColor);
       Enemy.turretMesh = createBoxMesh(1.1, 0.5, 1.1, turretColor);
       Enemy.barrelMesh = createBoxMesh(0.2, 0.2, 1.5, [0.2, 0.2, 0.2]);
@@ -164,7 +164,7 @@ export class Enemy {
         const muzzleData = this.getMuzzleData(quat);
         muzzlePos = muzzleData.muzzlePos;
         dir = muzzleData.dir;
-        this.shootCooldown = 4.0; // Slower enemy fire rate
+        this.shootCooldown = 2.5; // Slightly longer cooldown
         this.recoil = 1.0;
         didShoot = true;
     }

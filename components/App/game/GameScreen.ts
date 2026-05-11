@@ -296,36 +296,31 @@ export class GameScreen extends Screen {
     const forward = bRot.rotateVector([0, 0, -1]);
     
     // Safety check: Don't spawn inside walls if we are hugging them.
-    // Start raycast from center of tank to muzzle tip, plus a bit more.
-    const rayStart: vec3 = [bPos[0], bPos[1], bPos[2]];
+    // Start raycast from just outside the tank hull to see if there's an obstacle.
+    const hullSafeDist = 2.0;
+    const rayStart: vec3 = [
+        bPos[0] + forward[0] * hullSafeDist,
+        bPos[1] + forward[1] * hullSafeDist,
+        bPos[2] + forward[2] * hullSafeDist
+    ];
     const rayEnd: vec3 = [
-        bPos[0] + forward[0] * 3.5,
-        bPos[1] + forward[1] * 3.5,
-        bPos[2] + forward[2] * 3.5
+        bPos[0] + forward[0] * 4.0,
+        bPos[1] + forward[1] * 4.0,
+        bPos[2] + forward[2] * 4.0
     ];
     const rayObstacle = gfx3JoltManager.createRay(rayStart[0], rayStart[1], rayStart[2], rayEnd[0], rayEnd[1], rayEnd[2]);
     
     let spawnX, spawnY, spawnZ;
-    const spawnDist = 3.0; 
+    const spawnDist = 3.0; // Standard safe distance from tank center
 
-    if (rayObstacle.fraction < 1.0) { 
-        // Explode immediately at obstacle if it's closer than the spawn point
+    if (rayObstacle.fraction < 0.25) { // Hitting something very close to hull/barrel muzzle
+        // Explode immediately at obstacle if it's too close to safely spawn
         const hitPos: vec3 = [
-            rayStart[0] + forward[0] * rayObstacle.fraction * 3.5,
-            rayStart[1] + forward[1] * rayObstacle.fraction * 3.5,
-            rayStart[2] + forward[2] * rayObstacle.fraction * 3.5
+            rayStart[0] + forward[0] * rayObstacle.fraction * 2.0,
+            rayStart[1] + forward[1] * rayObstacle.fraction * 2.0,
+            rayStart[2] + forward[2] * rayObstacle.fraction * 2.0
         ];
-        
-        // Spawn temporary explosion directly without creating a projectile entity
-        const exp = this.explosionPool.acquire() as Explosion;
-        if (exp) {
-            const color: [number, number, number] = type === ProjectileType.GRENADE ? [0.8, 0.4, 0.1] : [0.6, 0.6, 0.6];
-            exp.reset(hitPos[0], hitPos[1], hitPos[2], color, undefined, type === ProjectileType.GRENADE ? 4.0 : 1.0, type === ProjectileType.GRENADE ? 'grenade' : undefined);
-            this.explosions.push(exp);
-        }
-        if (type === ProjectileType.GRENADE) {
-            this.applyAOE(hitPos, 12, 100);
-        }
+        this.onProjectileEnvironmentImpact({ type, ownerId: 'player' } as any, hitPos);
         return;
     } else {
         spawnX = bPos[0] + forward[0] * spawnDist;
@@ -448,7 +443,6 @@ export class GameScreen extends Screen {
       const pPos = p.body.body.GetPosition();
       const pPos3: vec3 = [pPos.GetX(), pPos.GetY(), pPos.GetZ()];
       const curV = p.body.body.GetLinearVelocity();
-      const pVel: vec3 = [curV.GetX(), curV.GetY(), curV.GetZ()];
       
       // Trails
       if (p.type === ProjectileType.GRENADE && Math.random() < 0.15) {
@@ -459,80 +453,57 @@ export class GameScreen extends Screen {
           }
       }
 
-      // 1. PREDICTIVE IMPACT DETECTION (Prevents Bounces)
-      // Check ahead to see if we hit something this frame
+      // Check hits
       let destroyed = false;
-      const duration = ts / 1000;
-      const checkAheadFactor = 2.5; 
-      const rayEnd: vec3 = [
-          pPos3[0] + pVel[0] * duration * checkAheadFactor,
-          pPos3[1] + pVel[1] * duration * checkAheadFactor,
-          pPos3[2] + pVel[2] * duration * checkAheadFactor
-      ];
-      
-      const pRay = gfx3JoltManager.createRay(pPos3[0], pPos3[1], pPos3[2], rayEnd[0], rayEnd[1], rayEnd[2]);
-      
-      if (pRay.fraction < 1.0) {
-          const hitPos: vec3 = [
-              pPos3[0] + pVel[0] * duration * checkAheadFactor * pRay.fraction,
-              pPos3[1] + pVel[1] * duration * checkAheadFactor * pRay.fraction,
-              pPos3[2] + pVel[2] * duration * checkAheadFactor * pRay.fraction
-          ];
-          
-          if (pRay.body) {
-              const bodyIdx = pRay.body.GetID().GetIndex();
-              const enemyHit = this.enemies.find(e => e.physicsBody && e.physicsBody.body.GetID().GetIndex() === bodyIdx);
-              if (enemyHit) {
-                  this.onProjectileHit(p, enemyHit, hitPos);
-              } else if (this.tank.physicsBody && bodyIdx === this.tank.physicsBody.body.GetID().GetIndex()) {
-                  if (p.life < 4.85) { 
-                      this.onProjectileHit(p, this.tank, hitPos);
-                  }
-              } else {
-                  this.onProjectileEnvironmentImpact(p, hitPos);
+
+      if (p.ownerId === 'player') {
+          // Player projectiles vs Enemies
+          for (const enemy of this.enemies) {
+              if (enemy.hp <= 0) continue;
+              const ePos = enemy.physicsBody.body.GetPosition();
+              const dist = UT.VEC3_DISTANCE(pPos3, [ePos.GetX(), ePos.GetY(), ePos.GetZ()]);
+              
+              if (dist < 2.5) {
+                  this.onProjectileHit(p, enemy, pPos3);
+                  destroyed = true;
+                  break;
               }
+          }
+      } else {
+          // Enemy projectiles vs Player
+          const distToPlayer = UT.VEC3_DISTANCE(pPos3, playerPos);
+          // Grace period for player's own shots to leave the spawn area (approx 0.15s)
+          if (p.life < 4.85 && distToPlayer < 2.8) {
+              this.onProjectileHit(p, this.tank, pPos3);
               destroyed = true;
           }
       }
 
-      // 2. FALLBACK (Distance Based)
       if (!destroyed) {
-          if (p.ownerId === 'player') {
-              for (const enemy of this.enemies) {
-                  if (enemy.hp <= 0) continue;
-                  const ePos = enemy.physicsBody.body.GetPosition();
-                  const dist = UT.VEC3_DISTANCE(pPos3, [ePos.GetX(), ePos.GetY(), ePos.GetZ()]);
-                  if (dist < 2.5) {
-                      this.onProjectileHit(p, enemy, pPos3);
-                      destroyed = true;
-                      break;
-                  }
-              }
-          } else {
-              const distToPlayer = UT.VEC3_DISTANCE(pPos3, playerPos);
-              if (p.life < 4.85 && distToPlayer < 2.8) {
-                  this.onProjectileHit(p, this.tank, pPos3);
-                  destroyed = true;
-              }
-          }
-      }
-
-      // 3. VELOCITY DROP / BOUNCE DETECTION (Last Resort)
-      if (!destroyed) {
-          const curVelSq = pVel[0]*pVel[0] + pVel[1]*pVel[1] + pVel[2]*pVel[2];
+          // Environment Impact (Ground or Walls)
+          // Avoid immediate self-destruction by checking life
+          const curVelSq = curV.GetX()*curV.GetX() + curV.GetY()*curV.GetY() + curV.GetZ()*curV.GetZ();
           const lastVelSq = p.lastVel[0]*p.lastVel[0] + p.lastVel[1]*p.lastVel[1] + p.lastVel[2]*p.lastVel[2];
-          const isNearGround = pPos3[1] < 0.1 && p.life < 4.95;
           
+          // Only impact if near ground and NOT just spawned
+          const groundThreshold = 0.15;
+          const isNearGround = pPos.GetY() < groundThreshold && p.life < 4.95;
+          
+          // If velocity magnitude dropped significantly or direction changed, we impacted something.
+          // We use a dot product to detect direction changes (bounces).
           let directionChanged = false;
           if (p.life < 4.95 && lastVelSq > 1.0 && curVelSq > 1.0) {
               const lastDir = UT.VEC3_NORMALIZE(p.lastVel);
-              const curDir = UT.VEC3_NORMALIZE(pVel);
+              const curDir = UT.VEC3_NORMALIZE([curV.GetX(), curV.GetY(), curV.GetZ()]);
               const dot = UT.VEC3_DOT(lastDir, curDir);
-              if (dot < 0.95) directionChanged = true; 
+              if (dot < 0.9) directionChanged = true; // >25 degree change
           }
 
           const hasImpactedVelocity = p.life < 4.95 && (curVelSq < lastVelSq * 0.4) && lastVelSq > 1.0;
-          if (isNearGround || hasImpactedVelocity || directionChanged) {
+          
+          const impacted = isNearGround || hasImpactedVelocity || directionChanged;
+
+          if (impacted) {
               this.onProjectileEnvironmentImpact(p, pPos3);
               destroyed = true;
           }
@@ -542,11 +513,13 @@ export class GameScreen extends Screen {
           gfx3JoltManager.removeBody(p.body);
           this.projectiles.splice(i, 1);
       } else {
-          p.lastVel = pVel;
+          p.lastVel = [curV.GetX(), curV.GetY(), curV.GetZ()];
+          
+          // Self-orient shells (not grenades)
           if (p.type === ProjectileType.SHELL) {
-             const velLenSq = pVel[0]*pVel[0] + pVel[1]*pVel[1] + pVel[2]*pVel[2];
-             if (velLenSq > 0.01) {
-                const dir = UT.VEC3_NORMALIZE(pVel);
+             const velLen = Math.sqrt(curV.GetX()*curV.GetX() + curV.GetY()*curV.GetY() + curV.GetZ()*curV.GetZ());
+             if (velLen > 0.1) {
+                const dir = UT.VEC3_NORMALIZE([curV.GetX(), curV.GetY(), curV.GetZ()]);
                 const yaw = Math.atan2(-dir[0], -dir[2]);
                 const pitch = Math.asin(dir[1]);
                 const q = Quaternion.createFromEuler(yaw, pitch, 0, 'YXZ');

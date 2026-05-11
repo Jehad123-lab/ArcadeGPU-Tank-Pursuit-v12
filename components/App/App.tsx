@@ -211,7 +211,7 @@ const HealthBar = ({ hp }: { hp: number }) => (
                 fontFamily: Tokens.fonts.data,
                 color: hp < 30 ? Tokens.colors.accent : Tokens.colors.content,
                 fontWeight: 'bold',
-            }}>{Math.ceil(hp)}%</div>
+            }}>{Math.max(0, Math.ceil(hp))}%</div>
         </div>
         
         <div style={{
@@ -231,7 +231,7 @@ const HealthBar = ({ hp }: { hp: number }) => (
                             backgroundColor: isActive 
                                 ? (hp > 50 ? '#4ADE80' : hp > 25 ? '#FACC15' : '#EF4444')
                                 : 'rgba(255, 255, 255, 0.05)',
-                            boxShadow: isActive ? `0 0 10px ${hp > 50 ? 'rgba(74, 222, 128, 0.4)' : hp > 25 ? 'rgba(250, 204, 21, 0.4)' : 'rgba(239, 68, 68, 0.4)'}` : 'none'
+                            boxShadow: (isActive && hp > 0) ? `0 0 10px ${hp > 50 ? 'rgba(74, 222, 128, 0.4)' : hp > 25 ? 'rgba(250, 204, 21, 0.4)' : 'rgba(239, 68, 68, 0.4)'}` : 'none'
                         }}
                         style={{
                             flex: 1,

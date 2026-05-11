@@ -299,6 +299,14 @@ export class GameScreen extends Screen {
     // Barrel center is bPos, length is 2.25, tip is ~1.125 ahead.
     // 2.5m offset from center is safe since we fixed the math explosion bug.
     let spawnDist = 2.5;
+    
+    // Safety: Raycast to ensure we don't spawn inside a wall
+    const ray = gfx3JoltManager.createRay(bPos[0], bPos[1], bPos[2], bPos[0] + forward[0] * spawnDist, bPos[1] + forward[1] * spawnDist, bPos[2] + forward[2] * spawnDist);
+    if (ray.fraction < 1.0) {
+        // If there's an object in the way, pull spawn point back to prevent logic explosion or immediate self-harm
+        spawnDist = Math.max(1.2, spawnDist * ray.fraction - 0.2);
+    }
+
     let spawnX = bPos[0] + forward[0] * spawnDist;
     let spawnY = bPos[1] + forward[1] * spawnDist; 
     let spawnZ = bPos[2] + forward[2] * spawnDist;
@@ -500,7 +508,15 @@ export class GameScreen extends Screen {
 
   onProjectileHit(p: Projectile, target: any, hitPos: vec3) {
       const isEnemy = target instanceof Enemy;
-      const dmg = p.type === ProjectileType.GRENADE ? 100 : 35;
+      
+      // Safety: Cannot hit owner for the first 0.2s of flight
+      if (p.life > 4.8 && target === (p.ownerId === 'player' ? this.tank : null)) {
+          return;
+      }
+
+      // Balance: Enemies do less damage than the player's heavy shells
+      const baseDmg = p.type === ProjectileType.GRENADE ? 100 : 35;
+      const dmg = (p.ownerId === 'enemy') ? baseDmg * 0.6 : baseDmg;
       
       if (isEnemy) {
           target.hp -= dmg;
@@ -516,8 +532,7 @@ export class GameScreen extends Screen {
           if (target.hp <= 0) {
               const expDeath = this.explosionPool.acquire() as Explosion;
               if (expDeath) {
-                  expDeath.reset(ePos.GetX(), ePos.GetY(), ePos.GetZ(), [0.8, 0.2, 0.1], undefined, 2.5);
-                  this.explosions.push(expDeath);
+                  expDeath.reset(ePos.GetX(), ePos.GetY(), ePos.GetZ(), [0.8, 0.2, 0.1], undefined, 1.2);
               }
               gfx3JoltManager.removeBody(target.physicsBody);
               // Teleport far away to avoid ghost collisions (bug in some physics engines)
@@ -528,11 +543,11 @@ export class GameScreen extends Screen {
           this.tank.hp -= dmg;
           const exp = this.explosionPool.acquire() as Explosion;
           if (exp) {
-              exp.reset(hitPos[0], hitPos[1], hitPos[2], [1, 0.1, 0.1], undefined, 2.0);
+              exp.reset(hitPos[0], hitPos[1], hitPos[2], [1, 0.1, 0.1], undefined, 1.2);
               this.explosions.push(exp);
           }
           // Recoil/Shake for player
-          this.tank.recoil = Math.max(this.tank.recoil, 0.5);
+          this.tank.recoil = Math.max(this.tank.recoil, 0.4);
       }
       
       if (p.type === ProjectileType.GRENADE) {
@@ -577,7 +592,10 @@ export class GameScreen extends Screen {
       const playerPos = this.tank.body.getPosition();
       const distToPlayer = UT.VEC3_DISTANCE(origin, playerPos);
       if (distToPlayer < radius) {
-          this.tank.hp -= damage;
+          // Safety: Massive self-damage protection for grenades hitting wall at point-blank
+          const isOwnAOE = true; // For now apply to all, but could check source
+          const finalDamage = (isOwnAOE && distToPlayer < 4.0) ? damage * 0.25 : damage; 
+          this.tank.hp -= finalDamage;
           this.tank.recoil = Math.max(this.tank.recoil, 1.0);
       }
   }

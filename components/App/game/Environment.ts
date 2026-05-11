@@ -167,7 +167,7 @@ export class Environment {
     this.initBatch();
 
     // Add physics crates
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 5; i++) {
         this.addCrate(
             (Math.random() - 0.5) * 60, 
             5 + Math.random() * 15, 

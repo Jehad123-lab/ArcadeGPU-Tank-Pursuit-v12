@@ -280,13 +280,13 @@ export class GameScreen extends Screen {
     const bRot = this.tank.barrel.getQuaternion();
     const forward = bRot.rotateVector([0, 0, -1]);
     
-    let spawnX = bPos[0] + forward[0] * 2;
-    let spawnY = bPos[1] + forward[1] * 2;
-    let spawnZ = bPos[2] + forward[2] * 2;
-
-    if (type === ProjectileType.SHELL) {
-        spawnY = 2.0; // Force enemy height level for shells
-    }
+    // Spawn point well ahead of the barrel tip to avoid self-collision
+    // Barrel center is bPos, length is 2.25, tip is ~1.125 ahead.
+    // 3.5m offset from center ensures ~2.3m clearance from muzzle.
+    let spawnDist = 3.5;
+    let spawnX = bPos[0] + forward[0] * spawnDist;
+    let spawnY = bPos[1] + forward[1] * spawnDist;
+    let spawnZ = bPos[2] + forward[2] * spawnDist;
 
     this.spawnProjectile(type, spawnX, spawnY, spawnZ, bRot, 'player');
     
@@ -336,15 +336,8 @@ export class GameScreen extends Screen {
   }
 
   spawnProjectile(type: ProjectileType, x: number, y: number, z: number, q: Quaternion, ownerId: string, speedMod: number = 1.0) {
-    let finalY = y;
-    let finalQ = q;
-
-    if (type === ProjectileType.SHELL) {
-        finalY = 2.0; // Maintain enemy height level
-        const directionRaw = q.rotateVector([0, 0, -1]);
-        const yaw = Math.atan2(-directionRaw[0], -directionRaw[2]);
-        finalQ = Quaternion.createFromEuler(yaw, 0, 0, 'YXZ'); // Horizontal projection
-    }
+    const finalY = y;
+    const finalQ = q;
 
     const direction = finalQ.rotateVector([0, 0, -1]);
     const pMesh = type === ProjectileType.GRENADE ? this.grenadeMesh : this.shellMesh;
@@ -447,9 +440,16 @@ export class GameScreen extends Screen {
 
       if (!destroyed) {
           // Environment Impact (Ground or Walls)
+          // Avoid immediate self-destruction by checking life
           const hVelSq = curV.GetX()*curV.GetX() + curV.GetZ()*curV.GetZ();
           const lastHVelSq = p.lastVel[0]*p.lastVel[0] + p.lastVel[2]*p.lastVel[2];
-          const impacted = pPos.GetY() < 0.2 || (p.life < 4.8 && Math.abs(lastHVelSq - hVelSq) > 200);
+          
+          // Only impact if near ground and NOT just spawned
+          const groundThreshold = 0.2;
+          const isNearGround = pPos.GetY() < groundThreshold;
+          const hasImpactedVelocity = p.life < 4.85 && Math.abs(lastHVelSq - hVelSq) > 150;
+          
+          const impacted = isNearGround || hasImpactedVelocity;
 
           if (impacted) {
               this.onProjectileEnvironmentImpact(p, pPos3);

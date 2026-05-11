@@ -212,12 +212,34 @@ const App = () => {
             }
         }, 500);
 
+        // Global mouse firing for desktop
+        const handleGlobalMouseDown = (e: MouseEvent) => {
+            if (isDesktop && gameScreenRef.current) {
+                // Only fire if we're not clicking on UI buttons
+                if ((e.target as HTMLElement).closest('button')) return;
+                gameScreenRef.current.virtualFireNormal = true;
+            }
+        };
+
+        const handleGlobalMouseUp = () => {
+            if (isDesktop && gameScreenRef.current) {
+                gameScreenRef.current.virtualFireNormal = false;
+            }
+        };
+
+        if (isDesktop) {
+            window.addEventListener('mousedown', handleGlobalMouseDown);
+            window.addEventListener('mouseup', handleGlobalMouseUp);
+        }
+
         return () => {
             document.removeEventListener('contextmenu', handleContextMenu);
+            window.removeEventListener('mousedown', handleGlobalMouseDown);
+            window.removeEventListener('mouseup', handleGlobalMouseUp);
             clearInterval(interval);
             em.pause();
         };
-    }, []);
+    }, [isDesktop]);
 
     const handleFire = (type: 'normal' | 'grenade', active: boolean, e: any) => {
         if (e.cancelable) e.preventDefault();
@@ -363,46 +385,46 @@ const App = () => {
             </div>
 
             {/* BOTTOM CONTROLS */}
-            <div style={{
-                position: 'absolute',
-                bottom: Tokens.spacing.lg,
-                left: Tokens.spacing.lg,
-                right: Tokens.spacing.lg,
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'flex-end',
-            }}>
-                {/* Movement */}
-                <div style={{ pointerEvents: 'auto' }}>
-                    {(isMobile || isTablet) && (
-                        <Joystick onChange={(dir) => { if (gameScreenRef.current) gameScreenRef.current.moveDir = dir; }} />
-                    )}
-                </div>
-
-                {/* Actions */}
+            {!isDesktop && (
                 <div style={{
+                    position: 'absolute',
+                    bottom: Tokens.spacing.lg,
+                    left: Tokens.spacing.lg,
+                    right: Tokens.spacing.lg,
                     display: 'flex',
-                    flexDirection: isMobile ? 'column' : 'row',
-                    gap: Tokens.spacing.md,
-                    pointerEvents: 'auto',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-end',
                 }}>
-                    <div style={{ display: 'flex', gap: Tokens.spacing.md }}>
-                        <ActionButton 
-                            icon={Fire} 
-                            size={isMobile ? 64 : 80}
-                            onDown={(e: any) => handleFire('grenade', true, e)}
-                            onUp={(e: any) => handleFire('grenade', false, e)}
-                        />
-                        <ActionButton 
-                            icon={Crosshair} 
-                            size={isMobile ? 80 : 100}
-                            color={Tokens.colors.surfaceLight}
-                            onDown={(e: any) => handleFire('normal', true, e)}
-                            onUp={(e: any) => handleFire('normal', false, e)}
-                        />
+                    {/* Movement */}
+                    <div style={{ pointerEvents: 'auto' }}>
+                        <Joystick onChange={(dir) => { if (gameScreenRef.current) gameScreenRef.current.moveDir = dir; }} />
+                    </div>
+
+                    {/* Actions */}
+                    <div style={{
+                        display: 'flex',
+                        flexDirection: isMobile ? 'column' : 'row',
+                        gap: Tokens.spacing.md,
+                        pointerEvents: 'auto',
+                    }}>
+                        <div style={{ display: 'flex', gap: Tokens.spacing.md }}>
+                            <ActionButton 
+                                icon={Fire} 
+                                size={isMobile ? 64 : 80}
+                                onDown={(e: any) => handleFire('grenade', true, e)}
+                                onUp={(e: any) => handleFire('grenade', false, e)}
+                            />
+                            <ActionButton 
+                                icon={Crosshair} 
+                                size={isMobile ? 80 : 100}
+                                color={Tokens.colors.surfaceLight}
+                                onDown={(e: any) => handleFire('normal', true, e)}
+                                onUp={(e: any) => handleFire('normal', false, e)}
+                            />
+                        </div>
                     </div>
                 </div>
-            </div>
+            )}
 
             <div style={{
                 position: 'absolute',
@@ -412,9 +434,10 @@ const App = () => {
                 fontSize: '10px',
                 fontFamily: Tokens.fonts.data,
                 color: Tokens.colors.contentDim,
-                letterSpacing: '1px'
+                letterSpacing: '1px',
+                opacity: 0.5
             }}>
-                {isDesktop ? 'DESKTOPMODE' : isTablet ? 'TABLETMODE' : 'MOBILEMODE'} // v0.3.1
+                TANK_CONTROL_ACTIVE
             </div>
 
             {/* GLOBAL STYLES FIX FOR CANVAS */}

@@ -133,7 +133,7 @@ export class GameScreen extends Screen {
     inputManager.registerAction('keyboard', 'KeyF', 'CAM_Z_OUT');
     inputManager.registerAction('keyboard', 'Space', 'FIRE');
 
-    inputManager.setPointerLockEnabled(false);
+    inputManager.setPointerLockEnabled(true);
     eventManager.subscribe(inputManager, 'E_MOUSE_MOVE', this, this.handleMouseMove);
 
     this.camera.setPosition(0, 10, -10);

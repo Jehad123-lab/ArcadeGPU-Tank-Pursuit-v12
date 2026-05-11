@@ -295,13 +295,38 @@ export class GameScreen extends Screen {
     const bRot = this.tank.barrel.getQuaternion();
     const forward = bRot.rotateVector([0, 0, -1]);
     
-    // Spawn point slightly ahead of the barrel tip.
-    // Barrel center is bPos, length is 2.25, tip is ~1.125 ahead.
-    // 2.5m offset from center is safe since we fixed the math explosion bug.
-    let spawnDist = 2.5;
-    let spawnX = bPos[0] + forward[0] * spawnDist;
-    let spawnY = bPos[1] + forward[1] * spawnDist; 
-    let spawnZ = bPos[2] + forward[2] * spawnDist;
+    // Safety check: Don't spawn inside walls if we are hugging them.
+    // Start raycast from just outside the tank hull to see if there's an obstacle.
+    const hullSafeDist = 2.0;
+    const rayStart: vec3 = [
+        bPos[0] + forward[0] * hullSafeDist,
+        bPos[1] + forward[1] * hullSafeDist,
+        bPos[2] + forward[2] * hullSafeDist
+    ];
+    const rayEnd: vec3 = [
+        bPos[0] + forward[0] * 4.0,
+        bPos[1] + forward[1] * 4.0,
+        bPos[2] + forward[2] * 4.0
+    ];
+    const rayObstacle = gfx3JoltManager.createRay(rayStart[0], rayStart[1], rayStart[2], rayEnd[0], rayEnd[1], rayEnd[2]);
+    
+    let spawnX, spawnY, spawnZ;
+    const spawnDist = 3.0; // Standard safe distance from tank center
+
+    if (rayObstacle.fraction < 0.25) { // Hitting something very close to hull/barrel muzzle
+        // Explode immediately at obstacle if it's too close to safely spawn
+        const hitPos: vec3 = [
+            rayStart[0] + forward[0] * rayObstacle.fraction * 2.0,
+            rayStart[1] + forward[1] * rayObstacle.fraction * 2.0,
+            rayStart[2] + forward[2] * rayObstacle.fraction * 2.0
+        ];
+        this.onProjectileEnvironmentImpact({ type, ownerId: 'player' } as any, hitPos);
+        return;
+    } else {
+        spawnX = bPos[0] + forward[0] * spawnDist;
+        spawnY = bPos[1] + forward[1] * spawnDist; 
+        spawnZ = bPos[2] + forward[2] * spawnDist;
+    }
 
     this.spawnProjectile(type, spawnX, spawnY, spawnZ, bRot, 'player');
     
@@ -367,7 +392,7 @@ export class GameScreen extends Screen {
       layer: JOLT_LAYER_MOVING,
       settings: { 
           mMassPropertiesOverride: 0.1, 
-          mRestitution: 0.025 // Reduced bounce by 75%
+          mRestitution: 0.0 // No bounce - explode or stop on impact
       }
     });
 
@@ -447,7 +472,8 @@ export class GameScreen extends Screen {
       } else {
           // Enemy projectiles vs Player
           const distToPlayer = UT.VEC3_DISTANCE(pPos3, playerPos);
-          if (distToPlayer < 2.5) {
+          // Grace period for player's own shots to leave the spawn area (approx 0.15s)
+          if (p.life < 4.85 && distToPlayer < 2.8) {
               this.onProjectileHit(p, this.tank, pPos3);
               destroyed = true;
           }
@@ -456,19 +482,26 @@ export class GameScreen extends Screen {
       if (!destroyed) {
           // Environment Impact (Ground or Walls)
           // Avoid immediate self-destruction by checking life
-          const hVelSq = curV.GetX()*curV.GetX() + curV.GetZ()*curV.GetZ();
-          const lastHVelSq = p.lastVel[0]*p.lastVel[0] + p.lastVel[2]*p.lastVel[2];
+          const curVelSq = curV.GetX()*curV.GetX() + curV.GetY()*curV.GetY() + curV.GetZ()*curV.GetZ();
+          const lastVelSq = p.lastVel[0]*p.lastVel[0] + p.lastVel[1]*p.lastVel[1] + p.lastVel[2]*p.lastVel[2];
           
           // Only impact if near ground and NOT just spawned
-          const groundThreshold = 0.2;
+          const groundThreshold = 0.15;
           const isNearGround = pPos.GetY() < groundThreshold && p.life < 4.95;
           
-          // Bugfix: Comparing squares directly causes tiny velocity drops at high speed to trigger impact!
-          // E.g. speed drops from 120m/s to 119m/s -> 14400 drops to 14161. Difference is 239 > 150!
-          // Instead, check if horizontal velocity squared drops by more than 50% relative to previous frame.
-          const hasImpactedVelocity = p.life < 4.90 && (hVelSq < lastHVelSq * 0.5) && lastHVelSq > 1.0;
+          // If velocity magnitude dropped significantly or direction changed, we impacted something.
+          // We use a dot product to detect direction changes (bounces).
+          let directionChanged = false;
+          if (p.life < 4.95 && lastVelSq > 1.0 && curVelSq > 1.0) {
+              const lastDir = UT.VEC3_NORMALIZE(p.lastVel);
+              const curDir = UT.VEC3_NORMALIZE([curV.GetX(), curV.GetY(), curV.GetZ()]);
+              const dot = UT.VEC3_DOT(lastDir, curDir);
+              if (dot < 0.9) directionChanged = true; // >25 degree change
+          }
+
+          const hasImpactedVelocity = p.life < 4.95 && (curVelSq < lastVelSq * 0.4) && lastVelSq > 1.0;
           
-          const impacted = isNearGround || hasImpactedVelocity;
+          const impacted = isNearGround || hasImpactedVelocity || directionChanged;
 
           if (impacted) {
               this.onProjectileEnvironmentImpact(p, pPos3);

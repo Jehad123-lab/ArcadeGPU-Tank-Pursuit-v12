@@ -394,11 +394,15 @@ export class GameScreen extends Screen {
     });
 
     if (type === ProjectileType.SHELL) {
-        gfx3JoltManager.bodyInterface.SetGravityFactor(pBody.body.GetID(), 0); // Shells never drop
+        // Shells now have gravity part of their ballistic trajectory
+        gfx3JoltManager.bodyInterface.SetGravityFactor(pBody.body.GetID(), 1.2); 
+    } else {
+        // Grenades are heavy and have a significant arc
+        gfx3JoltManager.bodyInterface.SetGravityFactor(pBody.body.GetID(), 1.6);
     }
 
-    let forwardSpeed = type === ProjectileType.GRENADE ? 30 : 120; // Faster shells for linear feel
-    let upwardVel = type === ProjectileType.GRENADE ? 15 : 0;
+    let forwardSpeed = type === ProjectileType.GRENADE ? 45 : 95; // Slightly faster for better feedback
+    let upwardVel = type === ProjectileType.GRENADE ? 8 : 1.5; // Slight upward boost helps the arc start cleanly
     
     forwardSpeed *= speedMod;
 

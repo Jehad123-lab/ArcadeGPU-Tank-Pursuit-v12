@@ -151,8 +151,8 @@ export class GameScreen extends Screen {
        this.cameraPitch += data.movementY * 0.005;
        
        // Limit pitch to avoid flipping over and going way below ground
-       // Limit pitch to avoid flipping over - ensure we can't look too far up/down
-       this.cameraPitch = Math.max(-0.3, Math.min(0.8, this.cameraPitch));
+       // Limit pitch to strictly positive to prevent camera from ever going below the tank plane
+       this.cameraPitch = Math.max(0.1, Math.min(1.0, this.cameraPitch));
     }
   };
 
@@ -246,16 +246,15 @@ export class GameScreen extends Screen {
 
     const camTarget = [
         followPos[0] + camOffset[0],
-        Math.max(followPos[1] - 1.0, followPos[1] + camOffset[1] + targetHeightOffset),
+        Math.max(followPos[1] + 1.0, followPos[1] + camOffset[1] + targetHeightOffset),
         followPos[2] + camOffset[2]
     ] as vec3;
 
-    // Camera Ground Clearance Check
-    // We ensure the camera stays at least 1.0m above the floor (y=0) or hills
-    // Since we don't have a direct heightmap lookup easily, we use a simple floor clamp for now
-    // but we'll make it more aggressive relative to the tank height to handle hills.
-    if (camTarget[1] < followPos[1] - 0.5) {
-        camTarget[1] = followPos[1] - 0.5;
+    // Aggressive Camera Elevation for Hills
+    // If the orbiting camera would dip too low relative to the tank's current plane,
+    // we force it upward to maintain visibility.
+    if (camTarget[1] < followPos[1] + 2.0) {
+        camTarget[1] = followPos[1] + 2.0;
     }
     
     // Hard floor limit
@@ -292,13 +291,11 @@ export class GameScreen extends Screen {
     const bRot = this.tank.barrel.getQuaternion();
     const forward = bRot.rotateVector([0, 0, -1]);
     
-    // Spawn point ahead of the barrel tip.
-    // Barrel center is bPos, length is 2.25, tip is ~1.125 ahead.
-    // 3.5m offset from center ensures clearance from muzzle.
-    let spawnDist = 3.5;
+    // Spawn point pushed even further to 8.0m to guarantee zero interference with tank's collision box
+    let spawnDist = 8.0;
     let spawnX = bPos[0] + forward[0] * spawnDist;
-    // ensure we spawn at least 1.0m above ground to prevent immediate floor-clipping
-    let spawnY = Math.max(1.0, bPos[1] + forward[1] * spawnDist + 0.2); 
+    // Force spawn height to be significantly above floor to avoid immediate ground collision on slopes
+    let spawnY = Math.max(1.8, bPos[1] + forward[1] * spawnDist + 0.4); 
     let spawnZ = bPos[2] + forward[2] * spawnDist;
 
     this.spawnProjectile(type, spawnX, spawnY, spawnZ, bRot, 'player');
@@ -457,10 +454,10 @@ export class GameScreen extends Screen {
           const hVelSq = curV.GetX()*curV.GetX() + curV.GetZ()*curV.GetZ();
           const lastHVelSq = p.lastVel[0]*p.lastVel[0] + p.lastVel[2]*p.lastVel[2];
           
-          // Only impact if near ground and NOT just spawned (0.05s grace for safe clearance)
+          // Only impact if near ground and NOT just spawned (0.15s grace for safe clearance)
           const groundThreshold = 0.2;
-          const isNearGround = pPos.GetY() < groundThreshold && p.life < 4.95;
-          const hasImpactedVelocity = p.life < 4.95 && Math.abs(lastHVelSq - hVelSq) > 150;
+          const isNearGround = pPos.GetY() < groundThreshold && p.life < 4.85;
+          const hasImpactedVelocity = p.life < 4.85 && Math.abs(lastHVelSq - hVelSq) > 150;
           
           const impacted = isNearGround || hasImpactedVelocity;
 

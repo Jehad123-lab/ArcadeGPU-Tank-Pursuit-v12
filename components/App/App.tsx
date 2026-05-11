@@ -178,11 +178,79 @@ const Joystick = ({ onChange }: { onChange: (dir: { x: number, y: number }) => v
     );
 };
 
+const HealthBar = ({ hp }: { hp: number }) => (
+    <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '8px',
+        padding: '12px 24px',
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        borderRadius: '12px',
+        border: `1px solid ${Tokens.colors.border}`,
+        backdropFilter: 'blur(20px)',
+        boxShadow: '0 8px 32px rgba(0,0,0,0.8), inset 0 0 20px rgba(255,255,255,0.05)',
+    }}>
+        <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            width: '100%'
+        }}>
+            <Gear size={14} color={hp < 30 ? Tokens.colors.accent : Tokens.colors.contentDim} />
+            <div style={{
+                color: Tokens.colors.contentDim,
+                fontSize: '11px',
+                fontFamily: Tokens.fonts.data,
+                textTransform: 'uppercase',
+                letterSpacing: '2px',
+                flex: 1
+            }}>SYSTEM_INTEGRITY</div>
+            <div style={{
+                fontSize: '12px',
+                fontFamily: Tokens.fonts.data,
+                color: hp < 30 ? Tokens.colors.accent : Tokens.colors.content,
+                fontWeight: 'bold',
+            }}>{Math.ceil(hp)}%</div>
+        </div>
+        
+        <div style={{
+            display: 'flex',
+            gap: '3px',
+            width: '280px',
+            height: '10px'
+        }}>
+            {Array.from({ length: 20 }).map((_, i) => {
+                const step = (i + 1) * 5;
+                const isActive = hp >= step;
+                return (
+                    <motion.div
+                        key={i}
+                        initial={false}
+                        animate={{ 
+                            backgroundColor: isActive 
+                                ? (hp > 50 ? '#4ADE80' : hp > 25 ? '#FACC15' : '#EF4444')
+                                : 'rgba(255, 255, 255, 0.05)',
+                            boxShadow: isActive ? `0 0 10px ${hp > 50 ? 'rgba(74, 222, 128, 0.4)' : hp > 25 ? 'rgba(250, 204, 21, 0.4)' : 'rgba(239, 68, 68, 0.4)'}` : 'none'
+                        }}
+                        style={{
+                            flex: 1,
+                            borderRadius: '1px',
+                            transition: 'background-color 0.2s ease'
+                        }}
+                    />
+                );
+            })}
+        </div>
+    </div>
+);
+
 // --- MAIN APP ---
 
 const App = () => {
     const [isReady, setIsReady] = useState(false);
     const [enemyCount, setEnemyCount] = useState(3);
+    const [playerHP, setPlayerHP] = useState(100);
     const gameScreenRef = useRef<GameScreen | null>(null);
     const { width } = useWindowSize();
     
@@ -209,8 +277,9 @@ const App = () => {
             if (gameScreenRef.current) {
                 const count = gameScreenRef.current.enemies.filter(e => e.hp > 0).length;
                 setEnemyCount(count);
+                setPlayerHP(gameScreenRef.current.tank.hp);
             }
-        }, 500);
+        }, 100);
 
         // Global mouse firing for desktop
         const handleGlobalMouseDown = (e: MouseEvent) => {
@@ -334,9 +403,8 @@ const App = () => {
                         letterSpacing: '2px',
                         textShadow: '0 2px 10px rgba(0,0,0,0.5)'
                     }}>ARCADE_GPU</h1>
-                    <div style={{ display: 'flex', gap: Tokens.spacing.sm }}>
+                    <div style={{ display: 'flex', gap: Tokens.spacing.sm, alignItems: 'flex-end' }}>
                         <StatBlock label="Enemies" value={enemyCount} icon={Crosshair} />
-                        {!isMobile && <StatBlock label="System" value="OK" icon={Gear} />}
                     </div>
                 </div>
 
@@ -425,6 +493,16 @@ const App = () => {
                     </div>
                 </div>
             )}
+
+            <div style={{
+                position: 'absolute',
+                bottom: '40px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                pointerEvents: 'auto'
+            }}>
+                <HealthBar hp={playerHP} />
+            </div>
 
             <div style={{
                 position: 'absolute',

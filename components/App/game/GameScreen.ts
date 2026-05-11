@@ -151,8 +151,9 @@ export class GameScreen extends Screen {
        this.cameraPitch += data.movementY * 0.005;
        
        // Limit pitch to avoid flipping over and going way below ground
-       // Limit pitch to strictly positive to prevent camera from ever going below the tank plane
-       this.cameraPitch = Math.max(0.1, Math.min(1.0, this.cameraPitch));
+       // Allow some pitch down and larger pitch up
+    // Limit pitch to avoid flipping over - ensure we can't look too far up/down
+    this.cameraPitch = Math.max(-0.4, Math.min(1.2, this.cameraPitch));
     }
   };
 
@@ -244,21 +245,24 @@ export class GameScreen extends Screen {
         return;
     }
 
-    const camTarget = [
-        followPos[0] + camOffset[0],
-        Math.max(followPos[1] + 1.0, followPos[1] + camOffset[1] + targetHeightOffset),
-        followPos[2] + camOffset[2]
-    ] as vec3;
-
-    // Aggressive Camera Elevation for Hills
-    // If the orbiting camera would dip too low relative to the tank's current plane,
-    // we force it upward to maintain visibility.
-    if (camTarget[1] < followPos[1] + 2.0) {
-        camTarget[1] = followPos[1] + 2.0;
+    let targetY = followPos[1] + camOffset[1] + targetHeightOffset;
+    
+    // Smooth, gentle floor/hill clamping
+    // We want the camera to stay at least 1.5m above the tank's base level (followPos[1])
+    // but we use an ease so it doesn't hard-snap.
+    const minHeight = followPos[1] + 1.5;
+    if (targetY < minHeight) {
+        targetY = minHeight - (minHeight - targetY) * 0.1; 
     }
     
-    // Hard floor limit
-    if (camTarget[1] < 1.0) camTarget[1] = 1.0;
+    // Hard floor limit to avoid passing under the map
+    if (targetY < 0.5) targetY = 0.5;
+
+    const camTarget = [
+        followPos[0] + camOffset[0],
+        targetY,
+        followPos[2] + camOffset[2]
+    ] as vec3;
     
     const camPos = this.camera.getPosition();
     // Smooth frame-rate independent lerp
@@ -291,11 +295,12 @@ export class GameScreen extends Screen {
     const bRot = this.tank.barrel.getQuaternion();
     const forward = bRot.rotateVector([0, 0, -1]);
     
-    // Spawn point pushed even further to 8.0m to guarantee zero interference with tank's collision box
-    let spawnDist = 8.0;
+    // Spawn point slightly ahead of the barrel tip.
+    // Barrel center is bPos, length is 2.25, tip is ~1.125 ahead.
+    // 2.5m offset from center is safe since we fixed the math explosion bug.
+    let spawnDist = 2.5;
     let spawnX = bPos[0] + forward[0] * spawnDist;
-    // Force spawn height to be significantly above floor to avoid immediate ground collision on slopes
-    let spawnY = Math.max(1.8, bPos[1] + forward[1] * spawnDist + 0.4); 
+    let spawnY = bPos[1] + forward[1] * spawnDist; 
     let spawnZ = bPos[2] + forward[2] * spawnDist;
 
     this.spawnProjectile(type, spawnX, spawnY, spawnZ, bRot, 'player');
@@ -454,10 +459,14 @@ export class GameScreen extends Screen {
           const hVelSq = curV.GetX()*curV.GetX() + curV.GetZ()*curV.GetZ();
           const lastHVelSq = p.lastVel[0]*p.lastVel[0] + p.lastVel[2]*p.lastVel[2];
           
-          // Only impact if near ground and NOT just spawned (0.15s grace for safe clearance)
+          // Only impact if near ground and NOT just spawned
           const groundThreshold = 0.2;
-          const isNearGround = pPos.GetY() < groundThreshold && p.life < 4.85;
-          const hasImpactedVelocity = p.life < 4.85 && Math.abs(lastHVelSq - hVelSq) > 150;
+          const isNearGround = pPos.GetY() < groundThreshold && p.life < 4.95;
+          
+          // Bugfix: Comparing squares directly causes tiny velocity drops at high speed to trigger impact!
+          // E.g. speed drops from 120m/s to 119m/s -> 14400 drops to 14161. Difference is 239 > 150!
+          // Instead, check if horizontal velocity squared drops by more than 50% relative to previous frame.
+          const hasImpactedVelocity = p.life < 4.90 && (hVelSq < lastHVelSq * 0.5) && lastHVelSq > 1.0;
           
           const impacted = isNearGround || hasImpactedVelocity;
 

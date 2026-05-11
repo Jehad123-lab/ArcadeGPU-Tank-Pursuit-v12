@@ -296,29 +296,26 @@ export class GameScreen extends Screen {
     const forward = bRot.rotateVector([0, 0, -1]);
     
     // Safety check: Don't spawn inside walls if we are hugging them.
-    // Start raycast from just outside the tank hull to see if there's an obstacle.
-    const hullSafeDist = 2.0;
-    const rayStart: vec3 = [
-        bPos[0] + forward[0] * hullSafeDist,
-        bPos[1] + forward[1] * hullSafeDist,
-        bPos[2] + forward[2] * hullSafeDist
-    ];
+    // Start raycast from turret center to the intended muzzle spawn point.
+    const spawnDist = 2.4; // Corrected to match visual gun muzzle (approx center displacement 1.2 + half-length 1.125)
+    
+    // Raycast from turret to slightly past muzzle
+    const rayStart = bPos;
     const rayEnd: vec3 = [
-        bPos[0] + forward[0] * 4.0,
-        bPos[1] + forward[1] * 4.0,
-        bPos[2] + forward[2] * 4.0
+        bPos[0] + forward[0] * (spawnDist + 0.5),
+        bPos[1] + forward[1] * (spawnDist + 0.5),
+        bPos[2] + forward[2] * (spawnDist + 0.5)
     ];
     const rayObstacle = gfx3JoltManager.createRay(rayStart[0], rayStart[1], rayStart[2], rayEnd[0], rayEnd[1], rayEnd[2]);
     
     let spawnX, spawnY, spawnZ;
-    const spawnDist = 3.0; // Standard safe distance from tank center
 
-    if (rayObstacle.fraction < 0.25) { // Hitting something very close to hull/barrel muzzle
-        // Explode immediately at obstacle if it's too close to safely spawn
+    if (rayObstacle.fraction < 1.0) { // Hitting something between turret and muzzle
+        // Explode at the intersection point!
         const hitPos: vec3 = [
-            rayStart[0] + forward[0] * rayObstacle.fraction * 2.0,
-            rayStart[1] + forward[1] * rayObstacle.fraction * 2.0,
-            rayStart[2] + forward[2] * rayObstacle.fraction * 2.0
+            rayStart[0] + forward[0] * rayObstacle.fraction * (spawnDist + 0.5),
+            rayStart[1] + forward[1] * rayObstacle.fraction * (spawnDist + 0.5),
+            rayStart[2] + forward[2] * rayObstacle.fraction * (spawnDist + 0.5)
         ];
         this.onProjectileEnvironmentImpact({ type, ownerId: 'player' } as any, hitPos);
         return;

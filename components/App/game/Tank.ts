@@ -264,7 +264,7 @@ export class Tank {
     
     // Apply pitch exclusively to the barrel/turret gun
     // Note: To pitch up, we rotate around X axis.
-    const pitchQ = Quaternion.createFromEuler(0, cameraPitch, 0, 'YXZ'); // pitch is X axis rotation
+    const pitchQ = Quaternion.createFromEuler(0, -cameraPitch, 0, 'YXZ'); // pitch is X axis rotation. FLIPPED sign to match user expectation.
     const barrelQ = Quaternion.multiply(turretQ, pitchQ);
 
     const turretOffset = q.rotateVector([0, 0.675, 0]);

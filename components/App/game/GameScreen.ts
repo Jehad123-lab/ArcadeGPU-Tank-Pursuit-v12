@@ -247,16 +247,11 @@ export class GameScreen extends Screen {
 
     let targetY = followPos[1] + camOffset[1] + targetHeightOffset;
     
-    // Smooth, gentle floor/hill clamping
-    // We want the camera to stay at least 1.5m above the tank's base level (followPos[1])
-    // but we use an ease so it doesn't hard-snap.
-    const minHeight = followPos[1] + 1.5;
-    if (targetY < minHeight) {
-        targetY = minHeight - (minHeight - targetY) * 0.1; 
+    // Hard floor limit to avoid camera going under the map level
+    const absoluteMinHeight = 0.5;
+    if (targetY < absoluteMinHeight) {
+        targetY = absoluteMinHeight;
     }
-    
-    // Hard floor limit to avoid passing under the map
-    if (targetY < 0.5) targetY = 0.5;
 
     const camTarget = [
         followPos[0] + camOffset[0],
@@ -297,14 +292,39 @@ export class GameScreen extends Screen {
     
     // Spawn point slightly ahead of the barrel tip.
     // Barrel center is bPos, length is 2.25, tip is ~1.125 ahead.
-    // 2.5m offset from center is safe since we fixed the math explosion bug.
-    let spawnDist = 2.5;
+    // We need to be outside the tank body (half-depth 1.8) and projectile half-depth (0.6).
+    // Minimum distance from turret center to be clear is 1.8 + 0.6 = 2.4.
+    let spawnDist = 3.2; 
     
     // Safety: Raycast to ensure we don't spawn inside a wall
     const ray = gfx3JoltManager.createRay(bPos[0], bPos[1], bPos[2], bPos[0] + forward[0] * spawnDist, bPos[1] + forward[1] * spawnDist, bPos[2] + forward[2] * spawnDist);
     if (ray.fraction < 1.0) {
-        // If there's an object in the way, pull spawn point back to prevent logic explosion or immediate self-harm
-        spawnDist = Math.max(1.2, spawnDist * ray.fraction - 0.2);
+        const hitDist = spawnDist * ray.fraction;
+        if (hitDist < 2.6) {
+            // Point blank shot into a wall! Don't spawn a physics projectile inside the tank or wall.
+            // Just spawn an explosion at the hit point to show it impacted immediately.
+            const hitX = bPos[0] + forward[0] * hitDist;
+            const hitY = bPos[1] + forward[1] * hitDist;
+            const hitZ = bPos[2] + forward[2] * hitDist;
+            
+            const exp = this.explosionPool.acquire() as Explosion;
+            if (exp) {
+                const color: [number, number, number] = type === ProjectileType.GRENADE ? [0.8, 0.4, 0.1] : [0.6, 0.6, 0.6];
+                exp.reset(hitX, hitY, hitZ, color, undefined, type === ProjectileType.GRENADE ? 4.0 : 1.0, type === ProjectileType.GRENADE ? 'grenade' : undefined);
+                this.explosions.push(exp);
+            }
+            
+            if (type === ProjectileType.GRENADE) {
+                // Apply reduced self-damage for point-blank wall hits
+                this.applyAOE([hitX, hitY, hitZ], 12, 100);
+            }
+            
+            // Recoil
+            this.tank.recoil = Math.max(this.tank.recoil, 0.5);
+            return; // Abort spawning the projectile
+        }
+        // If there's an object in the way but we have room, pull spawn point back
+        spawnDist = Math.max(2.6, hitDist - 0.2);
     }
 
     let spawnX = bPos[0] + forward[0] * spawnDist;

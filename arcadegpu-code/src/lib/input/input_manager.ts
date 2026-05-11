@@ -374,16 +374,19 @@ class InputManager {
     const x = leftR - (coreManager.getWidth() / 2);
     const y = topR - (coreManager.getHeight() / 2);
 
-    if (!this.mouseDown) {
+    if (!this.mouseDown && (e.buttons & 1) !== 0) {
       this.mouseDown = true;
       this.dragStartPosition[0] = x;
       this.dragStartPosition[1] = y;
       eventManager.emit(this, 'E_MOUSE_DOWN_ONCE', { buttons: e.buttons, x: x, y: y });
     }
 
-    this.mouseDown = true;
-    this.dragStartPosition[0] = x;
-    this.dragStartPosition[1] = y;
+    if ((e.buttons & 1) !== 0) {
+      this.mouseDown = true;
+      this.dragStartPosition[0] = x;
+      this.dragStartPosition[1] = y;
+    }
+
     eventManager.emit(this, 'E_MOUSE_DOWN', { buttons: e.buttons, x: x, y: y });
   }
 
@@ -392,9 +395,12 @@ class InputManager {
     const x = (e.clientX - rect.left) - (coreManager.getWidth() / 2);
     const y = (e.clientY - rect.top) - (coreManager.getHeight() / 2);
 
-    this.mouseDown = false;
-    this.dragStartPosition[0] = 0;
-    this.dragStartPosition[1] = 0;
+    if ((e.buttons & 1) === 0) {
+      this.mouseDown = false;
+      this.dragStartPosition[0] = 0;
+      this.dragStartPosition[1] = 0;
+    }
+
     eventManager.emit(this, 'E_MOUSE_UP', { x: x, y: y });
   }
 

@@ -52,7 +52,8 @@ export class Environment {
         width: 400, height: 1, depth: 400,
         x: 0, y: -2, z: 0,
         motionType: Gfx3Jolt.EMotionType_Static,
-        layer: JOLT_LAYER_NON_MOVING
+        layer: JOLT_LAYER_NON_MOVING,
+        meta: { isGround: true }
     });
 
     gfx3JoltManager.addPolygonShape({
@@ -60,7 +61,8 @@ export class Environment {
         indexes: terrainData.indexes,
         x: 0, y: 0, z: 0,
         motionType: Gfx3Jolt.EMotionType_Static,
-        layer: JOLT_LAYER_NON_MOVING
+        layer: JOLT_LAYER_NON_MOVING,
+        meta: { isGround: true }
     });
 
     // Generate mountains/walls at the edges

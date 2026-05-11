@@ -64,7 +64,12 @@ export class Tank {
       x: 0, y: 0.5, z: 0,
       motionType: Gfx3Jolt.EMotionType_Dynamic,
       layer: JOLT_LAYER_MOVING,
-      settings: { mAngularDamping: 1.0, mLinearDamping: 0.5, mMassPropertiesOverride: 100.0, mAllowedDOFs: 7 }
+      settings: { 
+        mAngularDamping: 5.0, // Significant damping to prevent spinning
+        mLinearDamping: 0.8, 
+        mMassPropertiesOverride: 200.0, // Heavier tank
+        mAllowedDOFs: 23 // Lock Pitch and Roll (1+2+4+16)
+      }
     });
   }
 
@@ -96,7 +101,7 @@ export class Tank {
    */
   update(ts: number, moveDir: { x: number, y: number }, fireNormal: boolean, fireGrenade: boolean, cameraYaw: number = 0, cameraPitch: number = 0): { normal: boolean, grenade: boolean } {
     const speed = 15;
-    const rotSpeed = 3.5;
+    const rotSpeed = 3.2; // Slightly reduced rotation speed for control
 
     let didShootNormal = false;
     let didShootGrenade = false;
@@ -114,7 +119,7 @@ export class Tank {
     this.shellRecoil -= (ts / 1000) * 5; 
     if (this.shellRecoil < 0) this.shellRecoil = 0;
 
-    this.grenadeRecoil -= (ts / 1000) * 2; // Grenades have slower fire rate
+    this.grenadeRecoil -= (ts / 1000) * 2; 
     if (this.grenadeRecoil < 0) this.grenadeRecoil = 0;
     
     // Steering Logic
@@ -122,10 +127,10 @@ export class Tank {
     
     const throttle = moveDir.y;
     const targetVelocity = throttle * speed;
-    const accelRate = throttle !== 0 ? 0.05 : 0.1;
+    const accelRate = throttle !== 0 ? 0.08 : 0.12; // Snappier acceleration/deceleration
     this.velocity = UT.LERP(this.velocity, targetVelocity, accelRate);
 
-    // Physics Update
+    // Physics Update: Position & Rotation
     const forward = [-Math.sin(this.rotation), 0, -Math.cos(this.rotation)] as vec3;
     const linVel = UT.VEC3_SCALE(forward, this.velocity);
     
@@ -133,12 +138,18 @@ export class Tank {
     const joltLinVel = new Gfx3Jolt.Vec3(linVel[0], curVel.GetY(), linVel[2]);
     gfx3JoltManager.bodyInterface.SetLinearVelocity(this.physicsBody.body.GetID(), joltLinVel);
     
+    // Explicitly set physics body rotation to match input rotation (yaw)
+    const yawQuat = Quaternion.createFromEuler(this.rotation, 0, 0, 'YXZ');
+    const joltRotation = new Gfx3Jolt.Quat(yawQuat.x, yawQuat.y, yawQuat.z, yawQuat.w);
+    gfx3JoltManager.bodyInterface.SetRotation(this.physicsBody.body.GetID(), joltRotation, Gfx3Jolt.EActivation_Activate);
+    
     const pos = this.physicsBody.body.GetPosition();
-    let quat = Quaternion.createFromEuler(this.rotation, 0, 0, 'YXZ');
+    let quat = yawQuat;
     
     // Cast rays from 4 corners down to find the ground normal for smooth banking
-    const hw = 1.4; // Half-width
-    const hd = 1.6; // Half-depth
+    // We filter these rays to ONLY hit the ground so buildings/crates don't tilt the tank.
+    const hw = 1.4; 
+    const hd = 1.6; 
 
     const sinYaw = Math.sin(this.rotation);
     const cosYaw = Math.cos(this.rotation);
@@ -152,11 +163,18 @@ export class Tank {
     const getHitPoint = (dx: number, dz: number): vec3 => {
       const wx = cx + rx * dx + fx * dz;
       const wz = cz + rz * dx + fz * dz;
-      const ray = gfx3JoltManager.createRay(wx, cy, wz, wx, cy - 3.0, wz);
-      if (ray.fraction < 1.0) {
-        return [wx, cy - ray.fraction * 3.0, wz];
+      // Start slightly above center to avoid getting stuck in thin floors, but low enough to avoid ceilings
+      const ray = gfx3JoltManager.createRay(wx, cy + 0.1, wz, wx, cy - 3.0, wz);
+      
+      // Filter: Only accept hits from the ground
+      if (ray.fraction < 1.0 && ray.body) {
+          const meta = gfx3JoltManager.getMeta(ray.body.GetID().GetIndex());
+          if (meta && meta.isGround) {
+              return [wx, (cy + 0.1) - ray.fraction * 3.0, wz];
+          }
       }
-      return [wx, cy - 1.5, wz]; 
+      
+      return [wx, cy - 0.5, wz]; // Default floor level relative to body center
     };
 
     const fl = getHitPoint(-hw, hd);
@@ -181,20 +199,25 @@ export class Tank {
        if (targetUp[1] < 0) targetUp = UT.VEC3_SCALE(targetUp, -1);
     }
     
-    // Smoothly lerp the current up vector towards the ground normal
-    this.currentUp = UT.VEC3_LERP(this.currentUp, targetUp, 6.0 * (ts / 1000));
+    // Smoothly lerp towards target up, but clamp the tilt to prevent extreme leans
+    const maxTilt = 0.25; // Limit how much we can lean (approx 15 degrees)
+    if (targetUp[1] < (1.0 - maxTilt)) {
+        targetUp[1] = 1.0 - maxTilt;
+        targetUp = UT.VEC3_NORMALIZE(targetUp);
+    }
+
+    this.currentUp = UT.VEC3_LERP(this.currentUp, targetUp, 4.0 * (ts / 1000));
     this.currentUp = UT.VEC3_NORMALIZE(this.currentUp);
 
     const up: vec3 = [0, 1, 0];
     let axis = UT.VEC3_CROSS(up, this.currentUp);
     const dot = UT.VEC3_DOT(up, this.currentUp);
-    // Only align if there's a valid angle
     if (UT.VEC3_LENGTH(axis) > 0.001 && Math.abs(dot) < 0.999) {
         axis = UT.VEC3_NORMALIZE(axis);
         const clampedDot = Math.max(-1, Math.min(1, dot));
         const angle = Math.acos(clampedDot);
         const alignQ = Quaternion.createFromAxisAngle(axis, angle);
-        quat = Quaternion.multiply(alignQ, quat); // Multiply align * yaw
+        quat = Quaternion.multiply(alignQ, quat); 
     }
 
     const joltQuat = new Gfx3Jolt.Quat(quat.x, quat.y, quat.z, quat.w);
